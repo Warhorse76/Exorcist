@@ -29,8 +29,8 @@ android {
             )
         }
         debug {
-            // Enable obfuscation in debug to test integrity/R8 compatibility
-            isMinifyEnabled = true
+            // Debug builds disable optimizations for debugging
+            // Keep proguardFiles for symbol generation
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
