@@ -36,9 +36,41 @@ class ShizukuScriptEngine(
             "list-permissions" -> auditor.runPrivilegedShell("pm list permissions -u -d -g")
             "check-firebase" -> auditor.runPrivilegedShell("dumpsys connectivity | grep -E 'google.com|firebaseio.com'")
             "shell-access" -> "Error: Raw rish session must be initiated via ADB or specialized terminal bridge."
+            "help" -> showDetailedHelp()
             
             else -> auditor.runPrivilegedShell(command)
         }
+    }
+
+    private fun showDetailedHelp(): String {
+        return """
+            Exorcist Forensic Script Engine v1.0
+            -----------------------------------
+            DEFENSIVE (Hardening & Recovery):
+            - harden-perms: Batch revoke SMS/Location for 3rd-party apps.
+            - kill-ghosts: Audit & identify unauthorized profiles for removal.
+            - disable-bad-apps [pkg]: Instantly disable a malicious package.
+            - clear-notifications: Stop malicious status bar listeners.
+            - stop-background: am force-stop non-whitelisted apps.
+            - reset-net: Toggle Airplane mode to clear socket sessions.
+            - block-install: Restrict new APK install locations.
+            - check-admins: List active Device Administrators.
+            - clean-cache: Trim system caches to clear temp malware data.
+            - emergency-stop: force-stop ALL 3rd-party apps at once.
+
+            OFFENSIVE/AUDIT (Recon & Detection):
+            - audit-manifest [pkg]: Full dump of permissions and intents.
+            - find-chameleons: Scan for disguised utilities with SMS perms.
+            - list-path [pkg]: Show exact physical file path of an APK.
+            - check-ip: Audit local IP and ARP tables (MITM detect).
+            - list-services: Identify hidden background services.
+            - detect-overlays: Find active 'alert windows' (phishing).
+            - app-standby: Check usagestats of suspicious packages.
+            - list-permissions: List every dangerous permission on system.
+            - check-firebase: Trace active connections to Firebase C2s.
+            - [raw command]: Run any adb shell command directly.
+            -----------------------------------
+        """.trimIndent()
     }
 
     private suspend fun runHardenPerms(): String {
