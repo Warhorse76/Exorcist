@@ -13,12 +13,14 @@ class ShizukuScriptEngine(
         val args = parts.drop(1)
 
         return when (scriptName) {
+            "help" -> showDetailedHelp()
+            
             // DEFENSIVE
             "harden-perms" -> runHardenPerms()
             "kill-ghosts" -> runKillGhosts()
             "disable-bad-apps" -> runDisableBadApps(args)
             "clear-notifications" -> auditor.runPrivilegedShell("cmd notification stop-listening com.example.badactor")
-            "stop-background" -> auditor.runPrivilegedShell("am kill-all")
+            "stop-background" -> auditor.runPrivilegedShell("for pkg in $(pm list packages -3 | cut -d: -f2); do am force-stop ${'$'}pkg; done")
             "reset-net" -> runResetNet()
             "block-install" -> auditor.runPrivilegedShell("pm set-install-location 1")
             "check-admins" -> auditor.runPrivilegedShell("dpm list-active-admins")
@@ -36,7 +38,6 @@ class ShizukuScriptEngine(
             "list-permissions" -> auditor.runPrivilegedShell("pm list permissions -u -d -g")
             "check-firebase" -> auditor.runPrivilegedShell("dumpsys connectivity | grep -E 'google.com|firebaseio.com'")
             "shell-access" -> "Error: Raw rish session must be initiated via ADB or specialized terminal bridge."
-            "help" -> showDetailedHelp()
             
             else -> auditor.runPrivilegedShell(command)
         }
@@ -48,15 +49,15 @@ class ShizukuScriptEngine(
             -----------------------------------
             DEFENSIVE (Hardening & Recovery):
             - harden-perms: Batch revoke SMS/Location for 3rd-party apps.
-            - kill-ghosts: Audit & identify unauthorized profiles for removal.
-            - disable-bad-apps [pkg]: Instantly disable a malicious package.
+            - kill-ghosts: Audit & identify unauthorized profiles.
+            - disable-bad-apps [pkg]: Instantly disable a package.
             - clear-notifications: Stop malicious status bar listeners.
-            - stop-background: am force-stop non-whitelisted apps.
+            - stop-background: am force-stop all 3rd-party apps.
             - reset-net: Toggle Airplane mode to clear socket sessions.
             - block-install: Restrict new APK install locations.
             - check-admins: List active Device Administrators.
             - clean-cache: Trim system caches to clear temp malware data.
-            - emergency-stop: force-stop ALL 3rd-party apps at once.
+            - emergency-stop: force-stop ALL 3rd-party apps.
 
             OFFENSIVE/AUDIT (Recon & Detection):
             - audit-manifest [pkg]: Full dump of permissions and intents.
@@ -68,7 +69,7 @@ class ShizukuScriptEngine(
             - app-standby: Check usagestats of suspicious packages.
             - list-permissions: List every dangerous permission on system.
             - check-firebase: Trace active connections to Firebase C2s.
-            - [raw command]: Run any adb shell command directly.
+            - [raw command]: Run any shell command directly.
             -----------------------------------
         """.trimIndent()
     }
