@@ -16,4 +16,7 @@ sealed interface Destination : NavKey {
 
     @Serializable
     data object Sanctuary : Destination
+
+    @Serializable
+    data object Terminal : Destination
 }

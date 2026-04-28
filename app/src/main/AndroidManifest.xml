@@ -68,6 +68,19 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+
+        <!-- Shizuku User Service for privileged network access -->
+        <service
+            android:name=".logic.ExorcistUserService"
+            android:exported="true"
+            android:permission="moe.shizuku.permission.BIND_USER_SERVICE">
+            <intent-filter>
+                <action android:name="rikka.shizuku.action.USER_SERVICE" />
+            </intent-filter>
+            <meta-data
+                android:name="rikka.shizuku.USER_SERVICE_PREFIX"
+                android:value="com.example.exorcist.logic.ExorcistUserService" />
+        </service>
     </application>
 
 </manifest>

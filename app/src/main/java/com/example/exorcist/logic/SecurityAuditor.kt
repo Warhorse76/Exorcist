@@ -1,20 +1,28 @@
 package com.example.exorcist.logic
 
 import android.app.admin.DevicePolicyManager
+import android.app.usage.UsageStatsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.ServiceConnection
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.IBinder
 import android.view.accessibility.AccessibilityManager
 import com.example.exorcist.IExorcistService
 import com.example.exorcist.model.PrivilegedApp
+import com.example.exorcist.model.SystemAppForensic
+import com.example.exorcist.model.ChameleonResult
+import com.example.exorcist.model.ArpEntry
 import kotlinx.coroutines.suspendCancellableCoroutine
 import rikka.shizuku.Shizuku
+import java.util.Locale
 import kotlin.coroutines.resume
 
 class SecurityAuditor(private val context: Context) {
+
+    fun getContext(): Context = context
 
     private val packageManager: PackageManager = context.packageManager
     private var userService: IExorcistService? = null
@@ -167,14 +175,25 @@ class SecurityAuditor(private val context: Context) {
             val uid = parts[7].toIntOrNull() ?: -1
             
             if (uid > 0) {
-                val packages = packageManager.getPackagesForUid(uid)
-                val packageName = packages?.firstOrNull()
-                val appName = packageName?.let {
-                    try {
-                        packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString()
-                    } catch (e: Exception) {
-                        null
+                // Try to get package info, handle errors gracefully for cross-profile UIDs
+                var packageName: String? = null
+                var appName: String? = null
+                
+                try {
+                    val packages = packageManager.getPackagesForUid(uid)
+                    packageName = packages?.firstOrNull()
+                    appName = packageName?.let {
+                        try {
+                            packageManager.getApplicationLabel(packageManager.getApplicationInfo(it, 0)).toString()
+                        } catch (e: Exception) {
+                            // UID may belong to another profile - use UID as fallback
+                            "UID:$uid"
+                        }
                     }
+                } catch (e: Exception) {
+                    // Cross-profile UID - use UID as identifier
+                    packageName = null
+                    appName = "UID:$uid"
                 }
                 
                 result.add(
@@ -242,6 +261,169 @@ class SecurityAuditor(private val context: Context) {
             !result.contains("Error")
         } catch (e: Exception) {
             false
+        }
+    }
+
+    suspend fun runPrivilegedShell(cmd: String): String {
+        val service = getUserService() ?: return "Error: Shizuku not authorized."
+        return try {
+            service.exec(cmd)
+        } catch (e: Exception) {
+            "Exception: ${e.message}"
+        }
+    }
+
+    fun getSystemAppForensics(): List<SystemAppForensic> {
+        val packages = packageManager.getInstalledPackages(0)
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
+        val endTime = System.currentTimeMillis()
+        val startTime = endTime - (1000L * 60 * 60 * 24 * 30) // Last 30 days
+        val stats = try {
+            usageStatsManager?.queryAndAggregateUsageStats(startTime, endTime)
+        } catch (e: Exception) {
+            null
+        }
+
+        return packages.filter { 
+            val appInfo = it.applicationInfo
+            appInfo != null && (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 
+        }.map {
+            val installSource = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                try {
+                    packageManager.getInstallSourceInfo(it.packageName).installingPackageName
+                } catch (e: Exception) {
+                    null
+                } ?: "System/Pre-installed"
+            } else {
+                @Suppress("DEPRECATION")
+                packageManager.getInstallerPackageName(it.packageName) ?: "System/Pre-installed"
+            }
+
+            SystemAppForensic(
+                packageName = it.packageName,
+                appName = it.applicationInfo?.loadLabel(packageManager)?.toString() ?: it.packageName,
+                installSource = installSource,
+                lastUpdateTime = it.lastUpdateTime,
+                lastUsedTime = stats?.get(it.packageName)?.lastTimeUsed
+            )
+        }.sortedByDescending { it.lastUsedTime ?: 0L }
+    }
+
+    fun scanChameleonApps(): List<ChameleonResult> {
+        val utilityKeywords = listOf("calculator", "calendar", "contacts", "torch", "flashlight", "compass", "clock")
+        val suspiciousPerms = listOf(
+            "android.permission.INTERNET",
+            "android.permission.READ_SMS",
+            "android.permission.RECEIVE_SMS",
+            "android.permission.ACCESS_FINE_LOCATION",
+            "android.permission.QUERY_ALL_PACKAGES",
+            "android.permission.REQUEST_INSTALL_PACKAGES",
+            "android.permission.SYSTEM_ALERT_WINDOW",
+            "android.permission.RECEIVE_BOOT_COMPLETED"
+        )
+
+        val installedApps = packageManager.getInstalledPackages(PackageManager.GET_PERMISSIONS or PackageManager.GET_SERVICES)
+        val results = mutableListOf<ChameleonResult>()
+
+        for (pkg in installedApps) {
+            val appInfo = pkg.applicationInfo ?: continue
+            val label = appInfo.loadLabel(packageManager).toString().lowercase()
+            val isSystemApp = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            if (isSystemApp) continue // Skip core system apps for this specific audit
+
+            val reasons = mutableListOf<String>()
+            var score = 0
+
+            val isUtility = utilityKeywords.any { label.contains(it) }
+            val hasDangerousPerms = pkg.requestedPermissions?.filter { it in suspiciousPerms } ?: emptyList()
+            
+            // Logic 1: Disparity check
+            if (isUtility) {
+                if ("android.permission.INTERNET" in hasDangerousPerms) {
+                    score += 2
+                    reasons.add("Utility tool requested INTERNET access")
+                }
+                if ("android.permission.READ_SMS" in hasDangerousPerms || "android.permission.RECEIVE_SMS" in hasDangerousPerms) {
+                    score += 4
+                    reasons.add("Utility tool requested SMS access (High Risk)")
+                }
+            }
+
+            // Logic 2: Accessibility check
+            val hasAccessibility = pkg.services?.any { it.permission == "android.permission.BIND_ACCESSIBILITY_SERVICE" } ?: false
+            if (hasAccessibility) {
+                score += 5
+                reasons.add("Registered BIND_ACCESSIBILITY_SERVICE (Overlay/LotL vector)")
+            }
+
+            // Logic 3: Overlay check
+            if ("android.permission.SYSTEM_ALERT_WINDOW" in hasDangerousPerms) {
+                score += 3
+                reasons.add("Requested SYSTEM_ALERT_WINDOW (Overlay capability)")
+            }
+
+            // Logic 4: Persistence check
+            if ("android.permission.RECEIVE_BOOT_COMPLETED" in hasDangerousPerms && isUtility) {
+                score += 2
+                reasons.add("Utility tool starts at boot without clear UI requirement")
+            }
+
+            if (score > 0) {
+                results.add(ChameleonResult(
+                    packageName = pkg.packageName,
+                    appLabel = label.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() },
+                    suspicionScore = score,
+                    riskLevel = when {
+                        score >= 7 -> "HIGH"
+                        score >= 4 -> "MED"
+                        else -> "LOW"
+                    },
+                    reasons = reasons
+                ))
+            }
+        }
+        return results.sortedByDescending { it.suspicionScore }
+    }
+
+    suspend fun getArpTable(): List<ArpEntry> {
+        val service = getUserService() ?: return emptyList()
+        val result = mutableListOf<ArpEntry>()
+        
+        try {
+            // Using 'ip neighbor' for modern Android compatibility and detailed state
+            val output = service.exec("ip neighbor show")
+            val lines = output.split("\n")
+            
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val parts = line.trim().split(Regex("\\s+"))
+                
+                val ip = parts.getOrNull(0) ?: continue
+                val devIdx = parts.indexOf("dev")
+                val lladdrIdx = parts.indexOf("lladdr")
+                
+                val mac = if (lladdrIdx != -1) parts.getOrNull(lladdrIdx + 1) else null
+                val dev = if (devIdx != -1) parts.getOrNull(devIdx + 1) ?: "unknown" else "unknown"
+                val state = parts.last()
+                
+                if (mac != null) {
+                    result.add(ArpEntry(ip, mac, dev, state))
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return result
+    }
+
+    suspend fun getDefaultGatewayIp(): String? {
+        val service = getUserService() ?: return null
+        return try {
+            val output = service.exec("ip route show")
+            val line = output.split("\n").find { it.startsWith("default via") }
+            line?.split(" ")?.getOrNull(2)
+        } catch (e: Exception) {
+            null
         }
     }
 }

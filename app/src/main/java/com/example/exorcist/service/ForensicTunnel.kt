@@ -40,6 +40,13 @@ class ForensicTunnel : VpnService() {
     private fun startVpn() {
         if (vpnInterface != null) return
 
+        // Detect existing VPN or Work Profile VPN (Stealth Logic)
+        val prepareIntent = prepare(this)
+        if (prepareIntent != null) {
+            Log.w(TAG, "Another VPN is active or permission missing")
+            return // Don't start if another VPN is active
+        }
+
         try {
             val builder = Builder()
                 .setSession("Exorcist Forensic Tunnel")
@@ -47,11 +54,6 @@ class ForensicTunnel : VpnService() {
                 .addDnsServer("8.8.8.8")
                 .addRoute("0.0.0.0", 0)
                 .setBlocking(true)
-
-            // Detect existing VPN or Work Profile VPN (Stealth Logic)
-            if (prepare(this) != null) {
-                Log.w(TAG, "Another VPN is active or permission missing")
-            }
 
             vpnInterface = builder.establish()
             Log.i(TAG, "Forensic Tunnel established")

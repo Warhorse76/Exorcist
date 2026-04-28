@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.exorcist.logic.SecurityAuditor
 import com.example.exorcist.model.PrivilegedApp
+import com.example.exorcist.model.SystemAppForensic
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 class SecurityViewModel(private val auditor: SecurityAuditor) : ViewModel() {
@@ -15,6 +17,9 @@ class SecurityViewModel(private val auditor: SecurityAuditor) : ViewModel() {
 
     private val _shizukuStatus = MutableStateFlow(ShizukuStatus.DISCONNECTED)
     val shizukuStatus: StateFlow<ShizukuStatus> = _shizukuStatus
+
+    private val _systemAppForensics = MutableStateFlow<List<SystemAppForensic>>(emptyList())
+    val systemAppForensics: StateFlow<List<SystemAppForensic>> = _systemAppForensics.asStateFlow()
 
     fun checkShizuku() {
         if (!auditor.isShizukuAvailable()) {
@@ -39,6 +44,12 @@ class SecurityViewModel(private val auditor: SecurityAuditor) : ViewModel() {
                 apps.addAll(auditor.getOwnersViaShizuku())
             }
             _privilegedApps.value = apps.distinctBy { it.packageName + it.type }
+        }
+    }
+
+    fun runForensicScan() {
+        viewModelScope.launch {
+            _systemAppForensics.value = auditor.getSystemAppForensics()
         }
     }
 

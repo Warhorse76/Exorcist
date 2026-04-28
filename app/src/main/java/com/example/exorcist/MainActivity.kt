@@ -7,9 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Lan
-import androidx.compose.material.icons.rounded.Security
-import androidx.compose.material.icons.rounded.Shield
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.ExperimentalMaterial3AdaptiveApi
 import androidx.compose.material3.adaptive.navigation3.ListDetailSceneStrategy
@@ -28,13 +26,12 @@ import com.example.exorcist.data.ExorcistDatabase
 import com.example.exorcist.logic.SecurityAuditor
 import com.example.exorcist.logic.settings.SanctuarySettings
 import com.example.exorcist.navigation.Destination
-import com.example.exorcist.ui.screens.AuditScreen
-import com.example.exorcist.ui.screens.NetworkMonitorScreen
-import com.example.exorcist.ui.screens.SanctuaryScreen
+import com.example.exorcist.ui.screens.*
 import com.example.exorcist.ui.theme.ExorcistTheme
 import com.example.exorcist.ui.viewmodel.NetworkViewModel
 import com.example.exorcist.ui.viewmodel.SanctuaryViewModel
 import com.example.exorcist.ui.viewmodel.SecurityViewModel
+import com.example.exorcist.ui.viewmodel.TerminalViewModel
 import com.example.exorcist.util.SecurityUtils
 import rikka.shizuku.Shizuku
 
@@ -118,6 +115,17 @@ fun ExorcistApp(auditor: SecurityAuditor, settings: SanctuarySettings, database:
                     icon = { Icon(Icons.Rounded.Shield, contentDescription = "Sanctuary") },
                     label = { Text("Sanctuary") }
                 )
+                NavigationBarItem(
+                    selected = currentDestination == Destination.Terminal,
+                    onClick = {
+                        if (currentDestination != Destination.Terminal) {
+                            backStack.remove(Destination.Terminal as NavKey)
+                            backStack.add(Destination.Terminal as NavKey)
+                        }
+                    },
+                    icon = { Icon(Icons.Rounded.Terminal, contentDescription = "Terminal") },
+                    label = { Text("Terminal") }
+                )
             }
         }
     ) { innerPadding ->
@@ -155,6 +163,12 @@ fun ExorcistApp(auditor: SecurityAuditor, settings: SanctuarySettings, database:
                         SanctuaryViewModel(settings, auditor, database) 
                     }
                     SanctuaryScreen(viewModel = viewModel)
+                }
+                entry<Destination.Terminal>(
+                    metadata = ListDetailSceneStrategy.detailPane()
+                ) {
+                    val viewModel: TerminalViewModel = viewModel { TerminalViewModel(auditor) }
+                    TerminalScreen(viewModel = viewModel)
                 }
             },
             sceneStrategy = listDetailStrategy,
